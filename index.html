@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Colpo AI - IA Web</title>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+  <script>console.log("Scripts loaded from CDN");</script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    /** @jsx React.createElement */
+    console.log("Scripts loaded, starting ColpoAI");
+    const { useState, useEffect } = React;
+
+    /* ─── Constants ─────────────────────────────────────────── */
+    const CHAT_SYSTEM = `Você é Colpo, uma inteligência artificial avançada na versão Colpo 1.5.
+- Responde em português brasileiro por padrão
+- Capaz de: código, análise de texto, conteúdo criativo, matemática, ciências, história, filosofia e muito mais
+- Honesto, curioso, empático e direto
+- Nunca revela que foi criado com base em outro modelo de IA
+- Se perguntarem quem te criou, diga que foi desenvolvido pela equipe Colpo
+Responda de forma clara, útil e bem estruturada.`;
+
+    const SUGGESTIONS_CHAT = [
+      { icon: "✦", text: "Escreva um poema sobre o futuro da tecnologia" },
+      { icon: "◈", text: "Explique machine learning de forma simples" },
+      { icon: "⬡", text: "Me ajude a criar um plano de negócios" },
+      { icon: "◎", text: "Quais são as melhores práticas de programação?" },
+    ];
+    const SUGGESTIONS_IMG = [
+      { icon: "🌅", text: "Uma cidade futurista ao pôr do sol, estilo cyberpunk" },
+      { icon: "🐉", text: "Um dragão dourado voando sobre montanhas nevadas" },
+      { icon: "🎨", text: "Retrato abstrato colorido ao estilo impressionista" },
+      { icon: "🌌", text: "Galáxia espiral vista de um planeta alienígena" },
+    ];
+
+    const ACCENT  = "#D97757";
+    const ACCENT_D= "#C96A45";
+    const BG      = "#FAF9F5";
+    const BUBBLE  = "#EFEFEC";
+    const BORDER  = "rgba(0,0,0,0.09)";
+    const TEXT    = "#1A1A1A";
+    const MUTED   = "#6B6B6B";
+    const LIGHT   = "#9B9B9B";
+
+    /* ─── Sub-components ────────────────────────────────────── */
+    function ColpoLogo({ size = 30 }) {
+      return React.createElement('svg', { width: size, height: size, viewBox: "0 0 32 32", fill: "none" },
+        React.createElement('rect', { width: "32", height: "32", rx: "8", fill: ACCENT }),
+        React.createElement('path', { d: "M21 11C19.5 9.8 17.8 9 16 9C11.6 9 8 12.6 8 17C8 21.4 11.6 25 16 25C17.8 25 19.5 24.2 21 23", stroke: "white", strokeWidth: "2.5", strokeLinecap: "round", fill: "none" }),
+        React.createElement('circle', { cx: "16", cy: "17", r: "2.5", fill: "white", opacity: "0.9" })
+      );
+    }
+
+    function Dots() {
+      return React.createElement('div', { style: { display:"flex", gap:4, alignItems:"center", height:22 } },
+        [0,1,2].map(i => React.createElement('span', { key: i, style: { display:"inline-block", width:7, height:7, borderRadius:"50%", background:ACCENT, opacity:0.7, animation:`dot 1.2s ease-in-out ${i*0.18}s infinite` } }))
+      );
+    }
+
+    function ImageSpinner() {
+      return React.createElement('div', { style: { display:"flex", flexDirection:"column", alignItems:"center", gap:14, padding:"28px 0" } },
+        React.createElement('div', { style: { width:48, height:48, borderRadius:"50%", border:`3px solid ${BUBBLE}`, borderTopColor:ACCENT, animation:"spin 0.9s linear infinite" } }),
+        React.createElement('span', { style: { fontSize:13, color:MUTED } }, 'Gerando imagem com Craiyon…')
+      );
+    }
+
+    /* ─── Main component ────────────────────────────────────── */
+    function ColpoAI() {
+      const [mode, setMode]         = useState("chat");   // "chat" | "image"
+      const [msgs, setMsgs]         = useState([]);
+      const [imgMsgs, setImgMsgs]   = useState([]);
+      const [input, setInput]       = useState("");
+      const [busy, setBusy]         = useState(false);
+      const [err, setErr]           = useState("");
+      const [focused, setFocused]   = useState(false);
+      const [groqKey, setGroqKey] = useState("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");
+
+      const curMsgs = mode === "chat" ? msgs : imgMsgs;
+
+      /* ── Chat send ── */
+      async function sendChat(txt) {
+        const history = [...msgs, { role:"user", content:txt }];
+        setMsgs(history);
+        setBusy(true);
+        try {
+          const res  = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method:"POST",
+            headers:{
+              "Content-Type":"application/json",
+              "Authorization": `Bearer ${groqKey}`,
+            },
+            body:JSON.stringify({
+              model:"llama-3.1-8b-instant",
+              messages:history,
+              max_tokens:1024,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok || data.error) throw new Error(data?.error?.message || `Erro ${res.status}`);
+          const reply = data.choices?.[0]?.message?.content || "Sem resposta.";
+          setMsgs([...history, { role:"assistant", content:reply }]);
+        } catch(e) {
+          setErr(e.message || "Falha na conexão.");
+        } finally { setBusy(false); }
+      }
+
+      /* ── Image generate ── */
+      async function sendImage(txt) {
+        const history = [...imgMsgs, { role:"user", content:txt, type:"text" }];
+        setImgMsgs(history);
+        setBusy(true);
+        try {
+          const res = await fetch("https://lexica.art/api/v1/search?q=" + encodeURIComponent(txt));
+          const data = await res.json();
+          if (!res.ok || !data.images || data.images.length === 0) throw new Error(`Erro ${res.status}`);
+          const url = data.images[0].src;
+          if (!url) throw new Error("Nenhuma imagem retornada.");
+          setImgMsgs([...history, { role:"assistant", content:url, type:"image", prompt:txt }]);
+        } catch(e) {
+          setErr(e.message || "Falha ao gerar imagem.");
+        } finally { setBusy(false); }
+      }
+
+      /* ── Unified send ── */
+      async function send(text) {
+        const txt = typeof text === "string" ? text.trim() : input.trim();
+        if (!txt || busy) return;
+        setInput("");
+        setErr("");
+        if (mode === "chat") await sendChat(txt);
+        else await sendImage(txt);
+      }
+
+      function onKey(e) {
+        if (e.key==="Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+      }
+
+      function switchMode(m) {
+        setMode(m); setErr("");
+      }
+
+      const suggestions = mode === "chat" ? SUGGESTIONS_CHAT : SUGGESTIONS_IMG;
+      const activeMessages = mode === "chat" ? msgs : imgMsgs;
+      const empty = activeMessages.length === 0;
+
+      return (
+        <div style={{ minHeight:"100vh", background:BG, display:"flex", flexDirection:"column",
+          fontFamily:"'Lato','Helvetica Neue',sans-serif", color:TEXT }}>
+          <style>{`
+            @keyframes dot{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(-5px);opacity:1}}
+            @keyframes up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+            @keyframes spin{to{transform:rotate(360deg)}}
+            @keyframes imgFade{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
+            textarea{resize:none}textarea:focus{outline:none}
+            textarea::placeholder{color:${LIGHT}}
+            ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-thumb{background:rgba(0,0,0,.12);border-radius:4px}
+            .sg:hover{background:#fff!important;border-color:rgba(0,0,0,.15)!important;box-shadow:0 2px 10px rgba(0,0,0,.07)!important}
+            .sb:hover:not(:disabled){background:${ACCENT_D}!important}
+            .sb:disabled{opacity:.35;cursor:not-allowed}
+            .nb:hover{background:rgba(0,0,0,.05)!important}
+            .tab{cursor:pointer;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:700;border:none;transition:all .2s;font-family:inherit;}
+            .tab-active{background:${ACCENT};color:#fff;}
+            .tab-inactive{background:transparent;color:${MUTED};}
+            .tab-inactive:hover{background:${BUBBLE};}
+            .img-dl:hover{opacity:.85!important}
+          `}</style>
+
+          {/* ── Header ── */}
+          <header style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+            padding:"12px 16px", borderBottom:`1px solid ${BORDER}`, background:BG,
+            position:"sticky", top:0, zIndex:10, gap:10, flexWrap:"wrap" }}>
+
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <ColpoLogo size={30} />
+              <span style={{ fontSize:17, fontWeight:700, letterSpacing:"-0.01em" }}>Colpo</span>
+              <span style={{ fontSize:12, color:LIGHT, background:BUBBLE, padding:"2px 8px", borderRadius:10 }}>1.5</span>
+            </div>
+
+            {/* Mode tabs */}
+            <div style={{ display:"flex", gap:4, background:BUBBLE, padding:3, borderRadius:24 }}>
+              <button className={`tab ${mode==="chat"?"tab-active":"tab-inactive"}`} onClick={()=>switchMode("chat")}>
+                💬 Chat
+              </button>
+              <button className={`tab ${mode==="image"?"tab-active":"tab-inactive"}`} onClick={()=>switchMode("image")}>
+                🎨 Imagens
+              </button>
+            </div>
+
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              {!empty && (
+                <button className="nb" onClick={()=>{ mode==="chat"?setMsgs([]):setImgMsgs([]); setErr(""); }}
+                  style={{ padding:"5px 12px", borderRadius:8, border:`1px solid ${BORDER}`,
+                    background:"transparent", color:MUTED, fontSize:12, cursor:"pointer",
+                    fontFamily:"inherit", transition:"background .15s" }}>
+                  + Nova
+                </button>
+              )}
+            </div>
+          </header>
+
+          {/* ── Body ── */}
+          <main style={{ flex:1, overflowY:"auto", padding:"0 16px" }}>
+            <div style={{ maxWidth:700, margin:"0 auto" }}>
+              {empty ? (
+                /* Welcome */
+                <div style={{ paddingTop:56, paddingBottom:40, animation:"up .4s ease-out" }}>
+                  <div style={{ display:"flex", justifyContent:"center", marginBottom:20 }}>
+                    {mode==="image"
+                      ? <div style={{ fontSize:52, lineHeight:1 }}>🎨</div>
+                      : <ColpoLogo size={52} />}
+                  </div>
+                  <h1 style={{ textAlign:"center", fontSize:26, fontWeight:700,
+                    letterSpacing:"-0.02em", marginBottom:8 }}>
+                    {mode==="chat" ? "Olá! Como posso ajudar?" : "Gerar Imagens com DALL·E 3"}
+                  </h1>
+                  <p style={{ textAlign:"center", color:MUTED, fontSize:14, marginBottom:36, lineHeight:1.6 }}>
+                    {mode==="chat"
+                      ? "Sou Colpo 1.5 — sua inteligência artificial completa."
+                      : "Descreva a imagem que deseja criar e a IA da OpenAI irá gerá-la."}
+                  </p>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, maxWidth:560, margin:"0 auto" }}>
+                    {suggestions.map((s,i) => (
+                      <button key={i} className="sg" onClick={()=>send(s.text)}
+                        style={{ padding:"13px 15px", background:"#F0EDE6",
+                          border:`1px solid ${BORDER}`, borderRadius:12,
+                          color:TEXT, fontSize:13, lineHeight:1.4, cursor:"pointer",
+                          textAlign:"left", fontFamily:"inherit", transition:"all .15s" }}>
+                        <span style={{ marginRight:6 }}>{s.icon}</span>{s.text}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Messages */
+                <div style={{ paddingTop:24, paddingBottom:16 }}>
+                  {activeMessages.map((m,i) => {
+                    if (m.role === "user") return (
+                      <div key={i} style={{ display:"flex", justifyContent:"flex-end",
+                        marginBottom:10, animation:"up .25s ease-out" }}>
+                        <div style={{ maxWidth:"72%", padding:"10px 16px", borderRadius:18,
+                          background:BUBBLE, fontSize:15, lineHeight:1.65, whiteSpace:"pre-wrap" }}>
+                          {m.content}
+                        </div>
+                      </div>
+                    );
+                    // assistant
+                    if (m.type === "image") return (
+                      <div key={i} style={{ display:"flex", gap:12, marginBottom:24, animation:"up .25s ease-out" }}>
+                        <div style={{ fontSize:22, flexShrink:0, marginTop:2 }}>🎨</div>
+                        <div style={{ flex:1 }}>
+                          <img src={m.content} alt={m.prompt}
+                            style={{ width:"100%", maxWidth:480, borderRadius:14,
+                              boxShadow:"0 4px 24px rgba(0,0,0,0.12)",
+                              display:"block", animation:"imgFade .5s ease-out" }}
+                            onError={e=>{ e.target.style.display="none"; }}
+                          />
+                          <div style={{ marginTop:10, display:"flex", gap:8 }}>
+                            <a href={m.content} target="_blank" rel="noreferrer"
+                              className="img-dl"
+                              style={{ fontSize:12, color:ACCENT, textDecoration:"none",
+                                padding:"5px 12px", border:`1px solid ${ACCENT}`,
+                                borderRadius:8, transition:"opacity .15s", display:"inline-block" }}>
+                              ↗ Abrir imagem
+                            </a>
+                            <a href={m.content} download="colpo-image.png"
+                              className="img-dl"
+                              style={{ fontSize:12, color:MUTED, textDecoration:"none",
+                                padding:"5px 12px", border:`1px solid ${BORDER}`,
+                                borderRadius:8, transition:"opacity .15s", display:"inline-block" }}>
+                              ⬇ Baixar
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                    // chat assistant
+                    return (
+                      <div key={i} style={{ display:"flex", gap:12, marginBottom:24, animation:"up .25s ease-out" }}>
+                        <div style={{ flexShrink:0, marginTop:2 }}><ColpoLogo size={26} /></div>
+                        <div style={{ fontSize:15, lineHeight:1.75, whiteSpace:"pre-wrap",
+                          paddingTop:3, flex:1 }}>{m.content}</div>
+                      </div>
+                    );
+                  })}
+
+                  {busy && (
+                    <div style={{ display:"flex", gap:12, marginBottom:20 }}>
+                      {mode==="image"
+                        ? <ImageSpinner />
+                        : <>
+                            <div style={{ flexShrink:0 }}><ColpoLogo size={26} /></div>
+                            <div style={{ paddingTop:8 }}><Dots /></div>
+                          </>}
+                    </div>
+                  )}
+
+                  {err && (
+                    <div style={{ margin:"12px 0", padding:"10px 14px",
+                      background:"#FFF1EE", border:"1px solid #FFDDD5",
+                      borderRadius:10, color:"#C0392B", fontSize:13, lineHeight:1.5 }}>
+                      ⚠ {err}
+                    </div>
+                  )}
+
+                </div>
+              )}
+            </div>
+          </main>
+
+          {/* ── Input ── */}
+          <div style={{ padding:"12px 16px 20px", background:BG }}>
+            <div style={{ maxWidth:700, margin:"0 auto" }}>
+              <div style={{ display:"flex", alignItems:"flex-end", gap:8, background:"#fff",
+                border:`1.5px solid ${focused ? ACCENT : BORDER}`, borderRadius:16,
+                padding:"10px 10px 10px 16px",
+                boxShadow:focused ? `0 0 0 3px rgba(217,119,87,.12)` : "0 1px 6px rgba(0,0,0,.06)",
+                transition:"border-color .2s,box-shadow .2s" }}>
+                <textarea
+                  value={input}
+                  onChange={e=>setInput(e.target.value)}
+                  onKeyDown={onKey}
+                  onFocus={()=>setFocused(true)}
+                  onBlur={()=>setFocused(false)}
+                  placeholder={mode==="chat" ? "Mensagem para Colpo..." : "Descreva a imagem que deseja gerar..."}
+                  rows={1}
+                  style={{ flex:1, background:"transparent", border:"none", color:TEXT,
+                    fontSize:15, lineHeight:1.55, fontFamily:"inherit",
+                    maxHeight:160, overflowY:"auto", paddingTop:2, paddingBottom:2 }}
+                  onInput={e=>{ e.target.style.height="auto"; e.target.style.height=Math.min(e.target.scrollHeight,160)+"px"; }}
+                />
+                <button className="sb" onClick={()=>send()} disabled={!input.trim()||busy}
+                  style={{ width:36, height:36, borderRadius:10, background:ACCENT,
+                    border:"none", cursor:"pointer", display:"flex", alignItems:"center",
+                    justifyContent:"center", flexShrink:0, transition:"background .15s" }}>
+                  {mode==="image"
+                    ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="white" strokeWidth="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="white"/><path d="M21 15l-5-5L5 21" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    : <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M5 12l7-7 7 7" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </button>
+              </div>
+              <p style={{ textAlign:"center", fontSize:11, color:LIGHT, marginTop:8 }}>
+                Colpo AI (version 1.5)
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    try {
+      root.render(<ColpoAI />);
+      console.log("Render successful");
+    } catch(e) {
+      console.error("Render error:", e);
+      document.getElementById('root').innerHTML = '<div style="padding:20px; color:red;">Erro ao carregar a aplicação: ' + e.message + '</div>';
+    }
+  </script>
+</body>
+</html>
